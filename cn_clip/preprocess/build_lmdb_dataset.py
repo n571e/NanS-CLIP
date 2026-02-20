@@ -47,10 +47,10 @@ if __name__ == "__main__":
             print("We will overwrite an existing LMDB file {}".format(lmdb_split_dir))
         os.makedirs(lmdb_split_dir, exist_ok=True)
         lmdb_img = os.path.join(lmdb_split_dir, "imgs")
-        env_img = lmdb.open(lmdb_img, map_size=1024**4)
+        env_img = lmdb.open(lmdb_img, map_size=10 * 1024**3)
         txn_img = env_img.begin(write=True)
         lmdb_pairs = os.path.join(lmdb_split_dir, "pairs")
-        env_pairs = lmdb.open(lmdb_pairs, map_size=1024**4)
+        env_pairs = lmdb.open(lmdb_pairs, map_size=10 * 1024**3)
         txn_pairs = env_pairs.begin(write=True)
 
         # write LMDB file storing (image_id, text_id, text) pairs

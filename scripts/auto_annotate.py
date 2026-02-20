@@ -78,16 +78,120 @@ def get_image_mime(image_path: Path) -> str:
     }.get(suffix, "image/jpeg")
 
 
+def infer_category(meta: dict) -> str:
+    """
+    根据 title / description / categories 中的关键词自动推断图片类别。
+    返回: "figure" | "genre_scene" | "calligraphy" | "artifact" |
+          "architecture" | "map" | "painting" | "general"
+    匹配顺序：细分类优先 → 大类兜底
+    """
+    text = " ".join([
+        meta.get("title", ""),
+        meta.get("description", ""),
+        " ".join(meta.get("categories", [])),
+    ]).lower()
+
+    # ---- 细分类优先匹配 ----
+    figure_kw = ["portrait", "figure", "lady", "emperor", "official",
+                 "scholar", "monk", "child", "rider", "court",
+                 "人物", "仕女", "侍女", "帝", "像", "罗汉"]
+    scene_kw = ["festival", "market", "banquet", "ceremony", "procession",
+                "daily life", "trade", "performance", "gathering",
+                "清明", "上元", "龙舟", "蚕织", "货郎", "耕织", "岁朝"]
+    callig_kw = ["calligraphy", "inscription", "rubbing", "stele",
+                 "书法", "碑", "帖", "拓片", "题跋", "墨迹"]
+
+    for kw in figure_kw:
+        if kw in text:
+            return "figure"
+    for kw in scene_kw:
+        if kw in text:
+            return "genre_scene"
+    for kw in callig_kw:
+        if kw in text:
+            return "calligraphy"
+
+    # ---- 大类匹配 ----
+    artifact_kw = ["porcelain", "ceramic", "bowl", "vase", "jade",
+                   "bronze", "pillow", "cup", "plate", "kiln",
+                   "celadon", "lacquer", "glaze", "vessel",
+                   "瓷", "器", "窑", "釉", "碗", "壶"]
+    arch_kw = ["pagoda", "temple", "palace", "bridge", "gate",
+               "tower", "pavilion", "tomb", "ruins", "city",
+               "wall", "garden", "mosque", "monastery",
+               "塔", "宫", "桥", "殿", "寺", "庙", "亭"]
+    map_kw = ["map", "atlas", "plan", "地图", "舆图", "志"]
+    painting_kw = ["painting", "scroll", "landscape", "ink", "silk",
+                   "album", "bamboo", "flower", "bird", "mountain",
+                   "fan", "handscroll", "hanging",
+                   "画", "图", "卷", "绢", "册页"]
+
+    for kw in artifact_kw:
+        if kw in text:
+            return "artifact"
+    for kw in arch_kw:
+        if kw in text:
+            return "architecture"
+    for kw in map_kw:
+        if kw in text:
+            return "map"
+    for kw in painting_kw:
+        if kw in text:
+            return "painting"
+    return "general"
+
+
+# ---------- 分类别 Prompt 模板 ----------
+
+_CATEGORY_INSTRUCTIONS = {
+    "figure": """请特别关注以下人物细节：
+- 人物身份特征（如衣冠服饰、头饰、配饰所暗示的阶层与身份）
+- 姿态动作与表情神韵
+- 人物之间的互动关系与画面叙事""",
+
+    "genre_scene": """请特别关注以下风俗场景细节：
+- 场景所反映的社会活动类型（如节庆、集市、宴饮、耕织）
+- 时代背景线索（服饰、器具、建筑风格所指向的历史时期）
+- 画面中的人群分布、空间纵深与叙事结构""",
+
+    "calligraphy": """请特别关注以下书法细节：
+- 书体类型（楷、行、草、隶、篆）
+- 用笔特征（如中锋/侧锋、提按顿挫、墨色变化）
+- 文本内容概要与书写者信息""",
+
+    "painting": """请特别关注以下视觉细节：
+- 构图手法（如留白、三远法、对角构图）
+- 用笔技法（如皴法类型、线条粗细、墨色浓淡）
+- 画面意境与情感表达""",
+
+    "artifact": """请特别关注以下细节：
+- 器型特征（如形制、尺寸比例、造型风格）
+- 釉色与纹饰（如冰裂纹、莲瓣纹、刻花）
+- 工艺水平与保存状态""",
+
+    "architecture": """请特别关注以下细节：
+- 建筑形制（如歇山顶、重檐、斗拱）
+- 空间布局与周边环境关系
+- 历史遗存与现代修复痕迹""",
+
+    "map": """请特别关注以下细节：
+- 地图所示的地理范围和主要地标
+- 标注文字与空间方位关系
+- 与南宋临安（今杭州）的地理关联""",
+
+    "general": """请关注画面中的主要视觉元素、色彩特征和文化意义。""",
+}
+
+
 def build_vlm_prompt(meta: dict) -> str:
     """
-    根据 metadata 构建 VLM prompt。
-    metadata 提供背景信息，让 VLM 不只是"盲看"图片，
-    而是在知道作品标题、朝代等信息的前提下做更精准的描述。
+    根据 metadata 构建 VLM prompt（类别自适应版本）。
+    会先自动推断图片类别，然后使用不同的细粒度指令模板。
     """
     context_parts = []
 
     era = meta.get("era", "")
-    category = meta.get("category", "")
+    category = meta.get("category", "") or infer_category(meta)
     title = meta.get("title", "")
     artist = meta.get("artist", "")
     description = meta.get("description", "")
@@ -111,9 +215,15 @@ def build_vlm_prompt(meta: dict) -> str:
 
     context = "\n".join(context_parts) if context_parts else "（无已知背景信息）"
 
+    # 根据推断类别选择细粒度指令
+    cat_key = infer_category(meta) if not meta.get("category") else category
+    extra_instruction = _CATEGORY_INSTRUCTIONS.get(cat_key, _CATEGORY_INSTRUCTIONS["general"])
+
     return f"""你是一位南宋历史与艺术研究专家。以下是关于这幅图像的背景信息：
 
 {context}
+
+{extra_instruction}
 
 请根据图像内容和背景信息，生成以下 3 种文本描述：
 

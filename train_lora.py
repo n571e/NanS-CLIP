@@ -17,6 +17,7 @@ Chinese-CLIP + LoRA 单卡训练脚本（不依赖 DDP 分布式）。
     python train_lora.py --epochs 50 --lr 2e-4 --rank 8 --batch_size 4
 """
 
+import math
 import os
 import sys
 import json
@@ -107,7 +108,8 @@ def main():
     parser.add_argument("--val_dir", type=str, default="../clip_data/datasets/SongDynasty/lmdb/valid")
     parser.add_argument("--pretrained", type=str, default="../clip_data/pretrained_weights/")
     parser.add_argument("--output_dir", type=str, default="../clip_data/experiments/lora_song")
-    parser.add_argument("--rank", type=int, default=4, help="LoRA rank")
+    parser.add_argument("--rank", type=int, default=8, help="LoRA rank")
+    parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Warmup 步数占总步数比例")
     parser.add_argument("--alpha", type=float, default=16.0, help="LoRA alpha")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--accum_freq", type=int, default=4, help="梯度累积步数，等效 batch = batch_size * accum_freq")
@@ -168,14 +170,27 @@ def main():
         weight_decay=args.wd,
     )
 
-    # 6. 混合精度
+    # 6. 学习率调度：Linear Warmup + Cosine Annealing
+    total_steps = args.epochs * (len(train_dataset) // args.batch_size + 1)
+    warmup_steps = int(total_steps * args.warmup_ratio)
+
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            return float(current_step) / float(max(1, warmup_steps))
+        progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    print(f"📈 学习率调度: Warmup {warmup_steps} steps → Cosine decay, 总 {total_steps} steps")
+
+    # 7. 混合精度
     scaler = torch.amp.GradScaler("cuda") if args.fp16 and device == "cuda" else None
 
-    # 7. 输出目录
+    # 8. 输出目录
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 8. 训练循环
+    # 9. 训练循环
     print(f"\n🚀 开始训练（{args.epochs} epochs, 等效 batch = {args.batch_size * args.accum_freq}）\n")
     best_val_loss = float("inf")
 
@@ -203,6 +218,7 @@ def main():
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
+                    scheduler.step()
             else:
                 image_features = model.encode_image(images)
                 text_features = model.encode_text(texts)
@@ -213,6 +229,7 @@ def main():
                 if (step + 1) % args.accum_freq == 0:
                     optimizer.step()
                     optimizer.zero_grad()
+                    scheduler.step()
 
             epoch_loss += loss.item() * args.accum_freq
             num_batches += 1

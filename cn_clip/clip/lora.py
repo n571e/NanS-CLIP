@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 LoRA (Low-Rank Adaptation) 模块实现。
-注入到 Chinese-CLIP 的 MultiheadAttention 的 out_proj 层，
-仅训练 ~1% 参数，实现领域适配。
+
+注入位置：
+  - ViT 视觉编码器: MultiheadAttention.out_proj
+  - RoBERTa 文本编码器: BertSelfAttention.query + BertSelfAttention.value
 """
 
 import math
@@ -56,7 +58,11 @@ class LoRALinear(nn.Module):
 
 
 def inject_lora(model, rank: int = 4, alpha: float = 16.0) -> list:
-    """将 LoRA 注入到 Chinese-CLIP 的所有 MultiheadAttention.out_proj 层。
+    """将 LoRA 注入到 Chinese-CLIP 的视觉编码器和文本编码器。
+
+    注入策略：
+      - ViT: nn.MultiheadAttention.out_proj（C++ 底层算子，需 @property 代理）
+      - RoBERTa: BertSelfAttention.query + .value（标准 nn.Linear，直接替换）
 
     Args:
         model: Chinese-CLIP 模型
@@ -69,11 +75,27 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0) -> list:
     lora_params = []
 
     for name, module in model.named_modules():
+        # ---- ViT 视觉编码器: out_proj ----
         if isinstance(module, nn.MultiheadAttention):
             old_proj = module.out_proj
             new_proj = LoRALinear(old_proj, rank=rank, alpha=alpha)
             module.out_proj = new_proj
             lora_params.extend([new_proj.lora_A, new_proj.lora_B])
+
+        # ---- RoBERTa 文本编码器: query + value ----
+        # 用类名匹配避免循环导入
+        elif type(module).__name__ == "BertSelfAttention":
+            # 注入 query 投影
+            old_q = module.query
+            new_q = LoRALinear(old_q, rank=rank, alpha=alpha)
+            module.query = new_q
+            lora_params.extend([new_q.lora_A, new_q.lora_B])
+
+            # 注入 value 投影
+            old_v = module.value
+            new_v = LoRALinear(old_v, rank=rank, alpha=alpha)
+            module.value = new_v
+            lora_params.extend([new_v.lora_A, new_v.lora_B])
 
     return lora_params
 

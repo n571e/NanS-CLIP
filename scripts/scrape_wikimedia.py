@@ -26,35 +26,72 @@ USER_AGENT = "NanS-CLIP/1.0 (Academic research; Song Dynasty culture retrieval)"
 
 # 搜索关键词列表（中英双语，尽可能覆盖南宋文化主题）
 SEARCH_QUERIES = [
-    # 英文搜索（Wikimedia 上英文内容最多）
+    # ===== 绘画类 =====
     "Southern Song dynasty painting",
     "Song dynasty scroll painting",
     "Song dynasty landscape painting",
-    "Song dynasty ceramics porcelain",
-    "Song dynasty Longquan celadon",
-    "West Lake Hangzhou",
-    "West Lake ancient painting",
-    "Liuhe Pagoda Hangzhou",
-    "Lin'an Southern Song",
-    "Song dynasty calligraphy",
-    "Song dynasty architecture",
     "Song dynasty silk painting",
     "Chinese landscape painting Song",
     "Song dynasty court painting",
+    "Song dynasty ink wash painting",
+    "Ma Yuan painting",          # 马远（南宋四大家）
+    "Xia Gui painting",         # 夏圭（南宋四大家）
+    "Li Tang painting",         # 李唐
+    "Liu Songnian painting",    # 刘松年
+    "Song dynasty fan painting",
+    "Song dynasty album leaf",
+    # ===== 人物画 & 风俗 =====
+    "Song dynasty figure painting",
+    "Song dynasty genre painting",
     "Song dynasty Buddhist art",
+    "Song dynasty portrait",
+    "Song dynasty ladies painting",
+    "Song dynasty market scene",
+    "Song dynasty festival painting",
+    # ===== 器物 & 工艺 =====
+    "Song dynasty ceramics porcelain",
+    "Song dynasty Longquan celadon",
+    "Song dynasty Guan ware",
+    "Song dynasty Ge ware",
+    "Song dynasty Jun ware",
+    "Song dynasty Ding ware",
+    "Song dynasty lacquerware",
+    "Song dynasty jade",
+    "Song dynasty bronze mirror",
+    "Song dynasty gold silver",
+    # ===== 建筑 & 遗址 =====
+    "Song dynasty architecture",
     "Hangzhou historical site",
-    # 中文搜索
+    "West Lake Hangzhou",
+    "Liuhe Pagoda Hangzhou",
+    "Leifeng Pagoda",
+    "Lin'an Southern Song",
+    "Song dynasty temple pagoda",
+    "Deshou Palace Hangzhou",
+    # ===== 书法 & 碑帖 =====
+    "Song dynasty calligraphy",
+    "Song dynasty inscription rubbing",
+    "Song dynasty stele",
+    # ===== 地图 =====
+    "Song dynasty map",
+    "Lin'an ancient map",
+    # ===== 中文搜索 =====
     "南宋 绘画",
-    "西湖",
+    "西湖 古画",
     "宋代 青瓷",
-    "临安",
+    "临安 南宋",
     "六和塔",
+    "南宋 人物画",
+    "宋代 书法",
+    "南宋 工艺美术",
+    "德寿宫",
+    "雷峰塔",
 ]
 
 # 每个查询最多下载的图片数
-MAX_PER_QUERY = 8
+MAX_PER_QUERY = 10
 # 总共最多下载的图片数
-MAX_TOTAL = 80
+MAX_TOTAL = 300
 # 最小图片尺寸（跳过太小的缩略图）
 MIN_IMAGE_SIZE = 50_000  # 50KB
 

@@ -116,32 +116,52 @@ def download(session, url, save_path, referer=None):
 
 
 # ══════════════════════════════════════════════
-#  数据源 3: 百度图片体验最好，重点爬取百度
+#  数据源 1: 百度图片（最稳、中文搜索体验最好）
 # ══════════════════════════════════════════════
 BAIDU_QUERIES = [
+    # --- 绘画 ---
     "南宋 山水画 博物馆",
     "马远 踏歌图 高清",
     "夏圭 溪山清远图",
+    "李唐 万壑松风图",
+    "刘松年 四景山水图",
+    "西湖十景 古画",
+    "宋代 花鸟画 高清",
+    "雷峰塔 夕照 古画",
+    "南宋 风俗画",
+    "南宋 人物画 仕女",
+    "宋代 罗汉图 释道画",
+    # --- 器物 ---
     "南宋官窑 瓷器",
     "龙泉青瓷 宋代 高清",
-    "西湖十景 古画",
+    "宋代 建盏 天目釉",
+    "南宋 哥窑 冰裂纹",
+    "宋代 定窑 白瓷",
+    "宋代 钧窑 窑变",
+    "南宋 金银器 博物馆",
+    "南宋 漆器 螺钿",
+    "南宋 刺绣 缂丝",
+    # --- 建筑 ---
     "德寿宫遗址 杭州",
     "六和塔 宋代",
-    "南宋 风俗画",
-    "宋代 建盏",
-    "江南 古镇 南宋",
-    "宋城 遗址 照片",
-    "南宋 刺绣 缂丝",
-    "雷峰塔 夕照 古画",
     "南宋 皇城 临安",
-    "宋代 花鸟画 高清",
-    "西湖 古代 地图",
+    "宋城 遗址 照片",
+    "灵隐寺 宋代",
+    "净慈寺 杭州 南宋",
+    # --- 书法 ---
     "宋代 书法 真迹",
+    "南宋 碑帖 拓片",
+    # --- 地图 ---
+    "西湖 古代 地图",
+    "临安 宋代 地图",
+    # --- 其他 ---
+    "江南 古镇 南宋",
+    "宋代 玉器 博物馆",
 ]
 
 def scrape_baidu(session, existing_urls, start_idx):
     print("\n" + "=" * 55)
-    print("  ⭐ [推荐数据源] 百度图片极速版")
+    print("  ⭐ [数据源 1] 百度图片极速版")
     print("=" * 55)
     entries, idx = [], start_idx
 
@@ -213,7 +233,7 @@ def scrape_baidu(session, existing_urls, start_idx):
 
 
 # ══════════════════════════════════════════════
-#  数据源 1: Wikimedia (降低频次，使用真实 UA)
+#  数据源 2: Wikimedia Commons
 # ══════════════════════════════════════════════
 WIKI_QUERIES = [
     "Southern Song dynasty painting",
@@ -223,7 +243,7 @@ WIKI_QUERIES = [
 
 def scrape_wikimedia(session, existing_urls, start_idx):
     print("\n" + "=" * 55)
-    print("  [补充数据源] Wikimedia Commons")
+    print("  [数据源 2] Wikimedia Commons")
     print("=" * 55)
     entries, idx = [], start_idx
 
@@ -281,6 +301,157 @@ def scrape_wikimedia(session, existing_urls, start_idx):
     return entries, idx
 
 
+# ══════════════════════════════════════════════
+#  数据源 3: 大都会艺术博物馆 Open Access API（免费）
+#  https://metmuseum.github.io/
+# ══════════════════════════════════════════════
+MET_QUERIES = [
+    "Song dynasty painting",
+    "Song dynasty ceramics",
+    "Song dynasty calligraphy",
+    "Chinese landscape painting Song",
+    "Song dynasty jade",
+    "Song dynasty bronze",
+    "Hangzhou",
+]
+
+def scrape_met_museum(session, existing_urls, start_idx):
+    print("\n" + "=" * 55)
+    print("  [数据源 3] 大都会艺术博物馆 Open Access")
+    print("=" * 55)
+    entries, idx = [], start_idx
+    base = "https://collectionapi.metmuseum.org/public/collection/v1"
+
+    for qi, q in enumerate(MET_QUERIES):
+        print(f"\n  [{qi+1}/{len(MET_QUERIES)}] {q}")
+        try:
+            resp = make_request(session, f"{base}/search?q={q}&hasImages=true")
+            data = resp.json()
+            obj_ids = data.get("objectIDs", [])
+            if not obj_ids:
+                print("    无结果"); continue
+
+            cnt = 0
+            for oid in obj_ids[:15]:  # 每个查询最多检查 15 件
+                if cnt >= MAX_PER_QUERY:
+                    break
+                try:
+                    obj = make_request(session, f"{base}/objects/{oid}").json()
+                except Exception:
+                    continue
+
+                img_url = obj.get("primaryImage", "")
+                if not img_url or img_url in existing_urls:
+                    continue
+                # 仅下载公开领域的
+                if not obj.get("isPublicDomain", False):
+                    continue
+
+                title = obj.get("title", "") or obj.get("objectName", "")
+                period = obj.get("period", "") or obj.get("dynasty", "")
+                artist = obj.get("artistDisplayName", "")
+
+                h = md5(img_url.encode()).hexdigest()[:8]
+                fn = f"met_{idx:03d}_{sanitize_fn((title or q)[:25])}_{h}.jpg"
+
+                print(f"    -> {fn}")
+                if download(session, img_url, IMAGE_DIR / fn,
+                            referer="https://www.metmuseum.org/"):
+                    entries.append({
+                        "filename": fn,
+                        "title": title,
+                        "description": f"{period} {artist}".strip(),
+                        "categories": [obj.get("department", ""), period],
+                        "original_url": img_url,
+                        "source": "The Metropolitan Museum of Art",
+                        "era": period,
+                    })
+                    existing_urls.add(img_url)
+                    idx += 1
+                    cnt += 1
+
+                time.sleep(DOWNLOAD_DELAY)
+            print(f"    +{cnt}")
+        except Exception as e:
+            print(f"    获取失败: {str(e)[:60]}")
+
+    return entries, idx
+
+
+# ══════════════════════════════════════════════
+#  数据源 4: 芝加哥艺术博物馆 Open Access API（免费）
+#  https://api.artic.edu/docs/
+# ══════════════════════════════════════════════
+ARTIC_QUERIES = [
+    "Song dynasty",
+    "Southern Song",
+    "Chinese landscape painting",
+    "Chinese ceramics Song",
+    "Chinese calligraphy",
+]
+
+def scrape_artic(session, existing_urls, start_idx):
+    print("\n" + "=" * 55)
+    print("  [数据源 4] 芝加哥艺术博物馆 Open Access")
+    print("=" * 55)
+    entries, idx = [], start_idx
+    base = "https://api.artic.edu/api/v1"
+    iiif_base = "https://www.artic.edu/iiif/2"
+
+    for qi, q in enumerate(ARTIC_QUERIES):
+        print(f"\n  [{qi+1}/{len(ARTIC_QUERIES)}] {q}")
+        try:
+            resp = make_request(session, f"{base}/artworks/search",
+                                params={"q": q, "limit": 15,
+                                        "fields": "id,title,date_display,artist_display,"
+                                                   "image_id,department_title,is_public_domain"})
+            data = resp.json().get("data", [])
+            if not data:
+                print("    无结果"); continue
+
+            cnt = 0
+            for item in data:
+                if cnt >= MAX_PER_QUERY:
+                    break
+                image_id = item.get("image_id")
+                if not image_id or not item.get("is_public_domain", False):
+                    continue
+
+                img_url = f"{iiif_base}/{image_id}/full/843,/0/default.jpg"
+                if img_url in existing_urls:
+                    continue
+
+                title = item.get("title", "")
+                period = item.get("date_display", "")
+                artist = item.get("artist_display", "")
+
+                h = md5(img_url.encode()).hexdigest()[:8]
+                fn = f"artic_{idx:03d}_{sanitize_fn((title or q)[:25])}_{h}.jpg"
+
+                print(f"    -> {fn}")
+                if download(session, img_url, IMAGE_DIR / fn,
+                            referer="https://www.artic.edu/"):
+                    entries.append({
+                        "filename": fn,
+                        "title": title,
+                        "description": f"{period} {artist}".strip(),
+                        "categories": [item.get("department_title", ""), period],
+                        "original_url": img_url,
+                        "source": "Art Institute of Chicago",
+                        "era": period,
+                    })
+                    existing_urls.add(img_url)
+                    idx += 1
+                    cnt += 1
+
+                time.sleep(DOWNLOAD_DELAY)
+            print(f"    +{cnt}")
+        except Exception as e:
+            print(f"    获取失败: {str(e)[:60]}")
+
+    return entries, idx
+
+
 def main():
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     METADATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -305,12 +476,20 @@ def main():
     idx = existing_count
     all_new = []
 
-    # 1. 专注百度抓取（最稳、最快）
+    # 1. 百度图片（最稳、最快）
     new_entries, idx = scrape_baidu(session, existing_urls, idx)
     all_new.extend(new_entries)
     
-    # 2. 尝试安全地补充 Wikimedia
+    # 2. Wikimedia Commons
     new_entries, idx = scrape_wikimedia(session, existing_urls, idx)
+    all_new.extend(new_entries)
+
+    # 3. 大都会艺术博物馆（高质量公开领域藏品）
+    new_entries, idx = scrape_met_museum(session, existing_urls, idx)
+    all_new.extend(new_entries)
+
+    # 4. 芝加哥艺术博物馆（高质量 IIIF 图像）
+    new_entries, idx = scrape_artic(session, existing_urls, idx)
     all_new.extend(new_entries)
 
     # 保存
@@ -333,3 +512,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

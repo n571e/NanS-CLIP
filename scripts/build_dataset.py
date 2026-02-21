@@ -41,10 +41,9 @@ def image_to_base64(image_path: Path, max_size: int = 512) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def build_texts_for_image(ann: dict, image_id: int) -> list:
+def build_texts_for_image(ann: dict) -> list:
     """
     从一条标注生成多条 text 记录。
-    每条 text 都关联到同一个 image_id。
     """
     texts = []
 
@@ -108,15 +107,22 @@ def main():
         print("❌ 图片数量太少（<5），无法构建有效数据集")
         return
 
-    # 打乱并划分 train/valid
+    # 打乱并按 **图片** 划分 train/valid 避免泄露
+    # 同一张图片的所有变体描述只会分到同一边
+    unique_filenames = list(set([ann["filename"] for ann in valid]))
     random.seed(args.seed)
-    random.shuffle(valid)
-    split_idx = int(len(valid) * args.train_ratio)
+    random.shuffle(unique_filenames)
+    
+    split_img_idx = int(len(unique_filenames) * args.train_ratio)
+    train_filenames = set(unique_filenames[:split_img_idx])
+    
     splits = {
-        "train": valid[:split_idx],
-        "valid": valid[split_idx:],
+        "train": [ann for ann in valid if ann["filename"] in train_filenames],
+        "valid": [ann for ann in valid if ann["filename"] not in train_filenames],
     }
-    print(f"   训练集: {len(splits['train'])} | 验证集: {len(splits['valid'])}")
+    
+    print(f"   按图片切分: 训练集包含 {len(train_filenames)} 张原图 | 验证集包含 {len(unique_filenames) - len(train_filenames)} 张原图")
+    print(f"   最终记录数: 训练集 {len(splits['train'])} 条 | 验证集 {len(splits['valid'])} 条")
 
     # 生成数据文件
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -127,30 +133,45 @@ def main():
 
         text_id_counter = 0
 
+        # 由于可能有多条标注对应同一张图（虽然上面的处理保证了同一图都在同一个 split），
+        # 我们需要在生成 TSV 时按去重的图片写入以防报错。
+        # 建立去重映射
+        split_unique_ann = []
+        seen = set()
+        for ann in split_data:
+            if ann["filename"] not in seen:
+                split_unique_ann.append(ann)
+                seen.add(ann["filename"])
+
         with open(tsv_path, "w", encoding="utf-8") as f_tsv, \
              open(jsonl_path, "w", encoding="utf-8") as f_jsonl:
 
-            for image_id, ann in enumerate(split_data):
-                img_path = image_dir / ann["filename"]
+            # 遍历去重后的图片
+            for image_id, ann_master in enumerate(split_unique_ann):
+                img_path = image_dir / ann_master["filename"]
 
                 # 写 TSV（图片 base64）
                 try:
                     b64 = image_to_base64(img_path)
                     f_tsv.write(f"{image_id}\t{b64}\n")
                 except Exception as e:
-                    print(f"  ⚠️ 图片处理失败: {ann['filename']}: {e}")
+                    print(f"  ⚠️ 图片处理失败: {ann_master['filename']}: {e}")
                     continue
 
-                # 写 JSONL（多条文本，都关联到同一个 image_id）
-                texts = build_texts_for_image(ann, image_id)
-                for text in texts:
-                    entry = {
-                        "text_id": text_id_counter,
-                        "text": text,
-                        "image_ids": [image_id]
-                    }
-                    f_jsonl.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                    text_id_counter += 1
+                # 收集所有此图片的标注
+                ann_list = [a for a in split_data if a["filename"] == ann_master["filename"]]
+                
+                # 写 JSONL
+                for ann in ann_list:
+                    texts = build_texts_for_image(ann)
+                    for text in texts:
+                        entry = {
+                            "text_id": text_id_counter,
+                            "text": text,
+                            "image_ids": [image_id]
+                        }
+                        f_jsonl.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                        text_id_counter += 1
 
         print(f"   ✅ {split_name}: {len(split_data)} 图 | {text_id_counter} 文本对")
         print(f"      {tsv_path}")

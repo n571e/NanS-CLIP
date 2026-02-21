@@ -151,3 +151,4 @@ core.*
 
 data/images/*
 *.json
+data/distractors/*

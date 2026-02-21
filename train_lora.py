@@ -84,18 +84,20 @@ class LMDBDataset(Dataset):
         return image, text_tokens
 
 
-def contrastive_loss(image_features, text_features, logit_scale):
-    """InfoNCE 对比损失"""
-    # 归一化
+def contrastive_loss(image_features, text_features, logit_scale, label_smoothing=0.1):
+    """InfoNCE 对比损失，增加 Label Smoothing 缓解小数据集过拟合"""
     image_features = F.normalize(image_features, dim=-1)
     text_features = F.normalize(text_features, dim=-1)
 
-    # 相似度矩阵
     logits = logit_scale * image_features @ text_features.T
-    labels = torch.arange(len(image_features), device=image_features.device)
+    batch_size = logits.shape[0]
+    device = logits.device
 
-    loss_i2t = F.cross_entropy(logits, labels)
-    loss_t2i = F.cross_entropy(logits.T, labels)
+    # 使用 F.cross_entropy 的 label_smoothing 参数 (要求 PyTorch >= 1.10)
+    labels = torch.arange(batch_size, device=device)
+    loss_i2t = F.cross_entropy(logits, labels, label_smoothing=label_smoothing)
+    loss_t2i = F.cross_entropy(logits.T, labels, label_smoothing=label_smoothing)
+
     return (loss_i2t + loss_t2i) / 2
 
 
@@ -113,9 +115,9 @@ def main():
     parser.add_argument("--alpha", type=float, default=16.0, help="LoRA alpha")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--accum_freq", type=int, default=4, help="梯度累积步数，等效 batch = batch_size * accum_freq")
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--wd", type=float, default=0.01)
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--lr", type=float, default=5e-5)
+    parser.add_argument("--wd", type=float, default=0.1)
+    parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument("--fp16", action="store_true", default=True)
     parser.add_argument("--save_every", type=int, default=5, help="每 N 个 epoch 保存一次")
     args = parser.parse_args()

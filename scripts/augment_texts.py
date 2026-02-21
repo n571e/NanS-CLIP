@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ANNOTATION_FILE = PROJECT_ROOT / "data" / "annotations.json"
 OUTPUT_FILE = PROJECT_ROOT / "data" / "annotations_augmented.json"
 
-API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+API_KEY = os.getenv("DASHSCOPE_API_KEY", "sk-67322cb9af1c4de493fcc371d3af9493")
 API_DELAY = 0.8  # 秒，qwen-turbo 限流宽松
 
 REWRITE_PROMPT = """你是一位中国历史文化领域的文本改写专家。请对以下描述进行同义改写：

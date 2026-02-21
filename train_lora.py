@@ -115,7 +115,7 @@ def main():
     parser.add_argument("--accum_freq", type=int, default=4, help="梯度累积步数，等效 batch = batch_size * accum_freq")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--wd", type=float, default=0.01)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--fp16", action="store_true", default=True)
     parser.add_argument("--save_every", type=int, default=5, help="每 N 个 epoch 保存一次")
     args = parser.parse_args()

@@ -19,34 +19,43 @@
 
 import os
 import json
-import argparse
 import base64
-from io import BytesIO
+import argparse
 from pathlib import Path
-
-import torch
-import lmdb
+from io import BytesIO
 import pickle
+import math
+import logging
+
+import lmdb
+import torch
+import numpy as np
 from tqdm import tqdm
 from PIL import Image
+
+# ============ 日志配置 ============
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 from cn_clip.clip import load_from_name, tokenize
 from cn_clip.clip.lora import inject_lora, load_lora_state_dict
 
 
-def load_eval_data(lmdb_dir: str, preprocess, max_txt_length: int = 52):
-    """从 LMDB 加载评估数据（不重复的图片和文本）"""
-    # 读取所有 pairs
-    env_pairs = lmdb.open(os.path.join(lmdb_dir, "pairs"), readonly=True, lock=False)
-    env_imgs = lmdb.open(os.path.join(lmdb_dir, "imgs"), readonly=True, lock=False)
-
-    with env_pairs.begin() as txn:
-        num = int(txn.get(b"num_samples").decode("utf-8"))
+def load_eval_data(lmdb_dir: str, preprocess):
+    """从 LMDB 加载所有待评测数据和 Ground Truth"""
+    lmdb_dir = Path(lmdb_dir)
+    env_imgs = lmdb.open(str(lmdb_dir / "imgs"), readonly=True, lock=False)
+    env_pairs = lmdb.open(str(lmdb_dir / "pairs"), readonly=True, lock=False)
 
     # 收集所有图文对
     pairs = []
     with env_pairs.begin() as txn:
-        for i in range(num):
+        num_pairs = txn.stat()["entries"]
+        for i in range(num_pairs):
             data = pickle.loads(txn.get(str(i).encode("utf-8")))
             image_id, text_id, text = data
             pairs.append((image_id, text))
@@ -67,14 +76,13 @@ def load_eval_data(lmdb_dir: str, preprocess, max_txt_length: int = 52):
 
     # 提取唯一文本
     unique_texts = list(set(p[1] for p in pairs))
+    text_to_idx = {text: idx for idx, text in enumerate(unique_texts)}  # O(1) 查表优化
 
     # 构建 ground truth 映射（用数组位置，不用 image_id）
-    # text_idx -> set of 图片数组位置
     text_to_images = {}
-    # img_pos -> set of 文本数组位置
     image_to_texts = {}
     for img_id, text in pairs:
-        text_idx = unique_texts.index(text)
+        text_idx = text_to_idx[text]
         img_pos = imgid_to_pos.get(img_id)
         if img_pos is None:
             continue
@@ -101,7 +109,7 @@ def load_distractors(distractor_dir: str, preprocess, start_id: int = 100000):
     """
     distractor_dir = Path(distractor_dir)
     if not distractor_dir.exists():
-        print(f"   ⚠️ 干扰图片目录不存在: {distractor_dir}")
+        logger.warning(f"干扰图片目录不存在: {distractor_dir}")
         return []
 
     exts = {".jpg", ".jpeg", ".png", ".webp"}
@@ -147,22 +155,58 @@ def compute_features(model, images, texts, device, batch_size=32):
     return image_features, text_features
 
 
-def recall_at_k(sim_matrix, ground_truth, k_list=[1, 5, 10]):
-    """计算 Recall@K 和 Mean Recall"""
+def metrics_at_k(sim_matrix, ground_truth, k_list=[1, 5, 10]):
+    """计算 Recall@K, Mean Recall, mAP, NDCG@K"""
     results = {}
+    
+    # 存储指标的累加器
+    recalls = {k: 0 for k in k_list}
+    ndcgs = {k: 0 for k in k_list}
+    map_sum = 0
+    total = 0
+    
+    for i in range(sim_matrix.shape[0]):
+        if i not in ground_truth:
+            continue
+            
+        gt = ground_truth[i]
+        num_gt = len(gt)
+        if num_gt == 0: continue
+            
+        # 对该样本获取所有预测值的排序
+        pred_indices = sim_matrix[i].argsort(descending=True).tolist()
+        
+        # 计算 Recall@K 和 NDCG@K
+        for k in k_list:
+            topk = pred_indices[:k]
+            hits = [1 if idx in gt else 0 for idx in topk]
+            
+            # Recall@K: 是否命中
+            if sum(hits) > 0:
+                recalls[k] += 1
+                
+            # NDCG@K: 标准折扣累积收益
+            dcg = sum([rel / math.log2(rank + 2) for rank, rel in enumerate(hits)])
+            idcg = sum([1 / math.log2(rank + 2) for rank in range(min(num_gt, k))])
+            ndcgs[k] += dcg / idcg if idcg > 0 else 0
+            
+        # 计算 Average Precision (AP) 用于 mAP
+        ap = 0
+        hits_so_far = 0
+        for rank, idx in enumerate(pred_indices):
+            if idx in gt:
+                hits_so_far += 1
+                ap += hits_so_far / (rank + 1)
+        map_sum += ap / num_gt
+        
+        total += 1
+        
     for k in k_list:
-        correct = 0
-        total = 0
-        for i in range(sim_matrix.shape[0]):
-            if i not in ground_truth:
-                continue
-            topk = sim_matrix[i].topk(k).indices.tolist()
-            gt = ground_truth[i]
-            if any(t in gt for t in topk):
-                correct += 1
-            total += 1
-        results[f"R@{k}"] = correct / max(total, 1) * 100
-    results["MR"] = sum(results.values()) / len(results)
+        results[f"R@{k}"] = recalls[k] / max(total, 1) * 100
+        results[f"NDCG@{k}"] = ndcgs[k] / max(total, 1) * 100
+    results["mAP"] = map_sum / max(total, 1) * 100
+    results["MR"] = sum([results[f"R@{k}"] for k in k_list]) / len(k_list)
+    
     return results
 
 
@@ -177,6 +221,7 @@ def main():
     parser.add_argument("--pretrained", type=str, default="../clip_data/pretrained_weights/")
     parser.add_argument("--rank", type=int, default=8)
     parser.add_argument("--alpha", type=float, default=16.0)
+    parser.add_argument("--text_only", action="store_true", default=False, help="是否仅微调文本编码器")
     parser.add_argument("--distractor_dir", type=str, default="",
                         help="干扰图片目录（Hard Negative 评测），如 data/distractors")
     args = parser.parse_args()
@@ -184,64 +229,64 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 加载数据（只加载一次）
-    print("📦 加载模型...")
+    logger.info("📦 加载模型...")
     model, preprocess = load_from_name("ViT-B-16", device="cpu", download_root=args.pretrained)
     model.float()
 
-    print("📂 加载评估数据...")
+    logger.info("📂 加载评估数据...")
     images, texts, text_to_images, image_to_texts = load_eval_data(args.data_dir, preprocess)
     num_domain_images = len(images)
-    print(f"   领域图片: {num_domain_images} | 文本: {len(texts)}")
+    logger.info(f"领域图片: {num_domain_images} | 文本: {len(texts)}")
 
     # 加载干扰图片（Hard Negative）
     if args.distractor_dir:
         distractors = load_distractors(args.distractor_dir, preprocess)
         if distractors:
             images = images + distractors  # 追加到末尾，不影响 ground truth 位置
-            print(f"   🎯 干扰图片: {len(distractors)} | 总检索池: {len(images)}")
+            logger.info(f"🎯 干扰图片: {len(distractors)} | 总检索池: {len(images)}")
 
     modes = [args.mode] if args.mode != "both" else ["zeroshot", "lora"]
     all_results = {}
 
     for mode in modes:
-        print(f"\n{'='*50}")
-        print(f"  评估模式: {mode}")
-        print(f"{'='*50}")
+        logger.info(f"{'='*50}")
+        logger.info(f"评估模式: {mode}")
+        logger.info(f"{'='*50}")
 
         if mode == "lora":
             # 重新加载干净模型再注入 LoRA
             model, preprocess = load_from_name("ViT-B-16", device="cpu", download_root=args.pretrained)
             model.float()
-            inject_lora(model, rank=args.rank, alpha=args.alpha)
+            inject_lora(model, rank=args.rank, alpha=args.alpha, text_only=args.text_only)
             if os.path.isfile(args.lora_path):
                 state_dict = torch.load(args.lora_path, map_location="cpu", weights_only=False)
                 load_lora_state_dict(model, state_dict)
-                print(f"   LoRA 权重已加载: {args.lora_path}")
+                logger.info(f"LoRA 权重已加载: {args.lora_path}")
             else:
-                print(f"   ⚠️ LoRA 权重不存在: {args.lora_path}，使用随机初始化")
+                logger.warning(f"LoRA 权重不存在: {args.lora_path}，使用随机初始化")
 
         model = model.to(device)
         model.eval()
 
-        print("🔧 提取特征...")
+        logger.info("🔧 提取特征...")
         image_features, text_features = compute_features(model, images, texts, device)
 
         sim_t2i = text_features @ image_features.T
         sim_i2t = image_features @ text_features.T
 
-        t2i_recall = recall_at_k(sim_t2i, text_to_images)
-        i2t_recall = recall_at_k(sim_i2t, image_to_texts)
+        t2i_metrics = metrics_at_k(sim_t2i, text_to_images)
+        i2t_metrics = metrics_at_k(sim_i2t, image_to_texts)
 
-        print(f"\n  Text → Image:")
-        for k, v in t2i_recall.items():
-            print(f"    {k}: {v:.1f}%")
-        print(f"\n  Image → Text:")
-        for k, v in i2t_recall.items():
-            print(f"    {k}: {v:.1f}%")
+        logger.info(f"\n  Text → Image:")
+        for k, v in t2i_metrics.items():
+            logger.info(f"    {k}: {v:.1f}%")
+        logger.info(f"\n  Image → Text:")
+        for k, v in i2t_metrics.items():
+            logger.info(f"    {k}: {v:.1f}%")
 
         all_results[mode] = {
-            "text_to_image": t2i_recall,
-            "image_to_text": i2t_recall,
+            "text_to_image": t2i_metrics,
+            "image_to_text": i2t_metrics,
         }
 
         result = {"mode": mode, **all_results[mode],
@@ -255,23 +300,23 @@ def main():
     # 如果跑了 both 模式，打印对比表格
     if len(all_results) == 2:
         pool_desc = f"（检索池: {len(images)} 张，其中干扰 {len(images) - num_domain_images}）" if len(images) > num_domain_images else ""
-        print(f"\n{'='*60}")
+        print(f"\n{'='*75}")
         print(f"  📊 Zero-Shot vs LoRA 对比 {pool_desc}")
-        print(f"{'='*60}")
+        print(f"{'='*75}")
         print(f"  {'指标':<16} {'Zero-Shot':>10} {'LoRA':>10} {'提升':>10}")
-        print(f"  {'-'*50}")
+        print(f"  {'-'*70}")
         zs = all_results["zeroshot"]
         lo = all_results["lora"]
         for direction, label in [("text_to_image", "T→I"), ("image_to_text", "I→T")]:
-            for k in ["R@1", "R@5", "R@10", "MR"]:
-                z = zs[direction][k]
-                l = lo[direction][k]
+            for k in ["R@1", "R@5", "R@10", "MR", "mAP", "NDCG@5"]:
+                z = zs[direction].get(k, 0)
+                l = lo[direction].get(k, 0)
                 delta = l - z
                 sign = "+" if delta >= 0 else ""
                 print(f"  {label} {k:<11} {z:>9.1f}% {l:>9.1f}% {sign}{delta:>8.1f}%")
-        print(f"  {'='*50}")
+        print(f"  {'='*75}")
 
-    print(f"\n💾 结果已保存")
+    logger.info("💾 结果已保存")
 
 
 if __name__ == "__main__":

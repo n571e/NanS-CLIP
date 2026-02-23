@@ -38,8 +38,8 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
 ]
 
-MAX_PER_QUERY = 5          # 每个关键词下载数量
-DOWNLOAD_DELAY = 1.0       # 下载间隔
+MAX_PER_QUERY = 60         # 每个关键词下载数量 (目标: 3000+ 张)
+DOWNLOAD_DELAY = 0.5       # 下载间隔
 MIN_IMAGE_SIZE = 20_000    # 20KB
 
 
@@ -119,46 +119,45 @@ def download(session, url, save_path, referer=None):
 #  数据源 1: 百度图片（最稳、中文搜索体验最好）
 # ══════════════════════════════════════════════
 BAIDU_QUERIES = [
-    # --- 绘画 ---
-    "南宋 山水画 博物馆",
-    "马远 踏歌图 高清",
-    "夏圭 溪山清远图",
-    "李唐 万壑松风图",
-    "刘松年 四景山水图",
-    "西湖十景 古画",
-    "宋代 花鸟画 高清",
-    "雷峰塔 夕照 古画",
-    "南宋 风俗画",
-    "南宋 人物画 仕女",
-    "宋代 罗汉图 释道画",
-    # --- 器物 ---
-    "南宋官窑 瓷器",
-    "龙泉青瓷 宋代 高清",
-    "宋代 建盏 天目釉",
-    "南宋 哥窑 冰裂纹",
-    "宋代 定窑 白瓷",
-    "宋代 钧窑 窑变",
-    "南宋 金银器 博物馆",
-    "南宋 漆器 螺钿",
-    "南宋 刺绣 缂丝",
-    # --- 建筑 ---
-    "德寿宫遗址 杭州",
-    "六和塔 宋代",
-    "南宋 皇城 临安",
-    "宋城 遗址 照片",
-    "灵隐寺 宋代",
-    "净慈寺 杭州 南宋",
-    # --- 书法 ---
-    "宋代 书法 真迹",
-    "南宋 碑帖 拓片",
-    # --- 地图 ---
-    "西湖 古代 地图",
-    "临安 宋代 地图",
-    # --- 其他 ---
-    "江南 古镇 南宋",
-    "宋代 玉器 博物馆",
-]
+    # --- 南宋绘画 (山水核心) ---
+    "南宋 山水画 博物馆", "马远 踏歌图 高清", "马远 寒江独钓图", "马远 秋江渔隐图", "马远 梅石溪凫图",
+    "夏圭 溪山清远图", "夏圭 梧竹幽居图", "夏圭 临流抚琴图", "夏圭 山水十二景",
+    "李唐 万壑松风图", "李唐 采薇图", "李唐 江山小景图",
+    "刘松年 四景山水图", "刘松年 罗汉图", "刘松年 醉圣图",
+    "南宋 院体画 风格", "南宋 边角之景 构图", "大斧劈皴 技法", "水墨 晕染 技法 宋画",
+    "西湖十景 古画 绢本", "断桥残雪 古画", "雷峰夕照 古画", "南屏晚钟 古画",
 
+    # --- 南宋绘画 (其他名家) ---
+    "梁楷 泼墨仙人图", "梁楷 太白行吟图", "梁楷 六祖斫竹图",
+    "牧溪 潇湘八景图", "牧溪 渔村夕照图", "牧溪 柿图", "牧溪 猿图",
+    "赵孟坚 墨兰图", "赵孟坚 水仙图", "陈容 九龙图", "陈容 云龙图",
+    "林椿 果熟禽来图", "林椿 梅竹寒禽图", "吴炳 出水芙蓉图", "李迪 枫鹰雉鸡图",
+    "南宋 佚名 宫廷画", "南宋 货郎图 李嵩", "南宋 骷髅幻戏图",
+
+    # --- 陶瓷与器物 (深度细分) ---
+    "南宋官窑 瓷器 典型器", "南宋 官窑 冰裂纹 细节", "南宋 官窑 粉青釉 弦纹瓶", 
+    "南宋 官窑 鬲式炉", "南宋 官窑 贯耳瓶", "杭州老虎洞窑址 出土", "修内司官窑 瓷片",
+    "龙泉青瓷 南宋 典型器", "龙泉窑 梅子青 鬲式炉", "龙泉窑 粉青 凤耳瓶", "龙泉窑 贴花 瓷器",
+    "南宋 建盏 兔毫", "南宋 建盏 鹧鸪斑", "建窑 曜变天目 细节", "吉州窑 木叶纹 盏",
+    "吉州窑 剪纸贴花 盏", "吉州窑 玳瑁釉", "南宋 哥窑 传世 瓷器", "哥窑 金丝铁线 细节",
+    "宋代 定窑 刻花 白瓷", "宋代 景德镇 青白瓷 南宋", "南宋 湖田窑 枕",
+    
+    # --- 金银漆木与纺织 ---
+    "南宋 金银器 坑出土", "南宋 鎏金 缠枝 簪", "南宋 银铤 铭文", "金华 兰溪 南宋 墓出土",
+    "南宋 螺钿 漆器", "南宋 剔红 漆奁", "南宋 剔犀 漆盘", "南宋 漆器 博物馆",
+    "南宋 缂丝 织物", "宋代 刺绣 针法 细节", "南宋 铜镜 湖州铭文", "南宋 玉器 饰品",
+
+    # --- 建筑与考古遗址 ---
+    "南宋 德寿宫 重建 建筑细节", "杭州 南宋皇城 遗址 公园", "临安城 遗址 夯土", 
+    "南宋 太庙 遗址", "六和塔 砖石结构", "杭州 飞来峰 宋代造像", "灵隐寺 苏堤 春晓",
+    "南宋 八卦田 航拍", "小河直街 宋文化", "桥西直街 古建筑",
+
+    # --- 典籍书法与生活 ---
+    "宋代 蝴蝶装 刻本", "南宋 临安 刊本", "南宋 宋高宗 书法", "岳飞 手迹 墨宝",
+    "陆游 书法 拓片", "范成大 墨迹 诗帖", "张即之 书法 楷书", "南宋 抄本 文献",
+    "宋代 点茶场景 画", "宋代 斗茶图", "南宋 焚香 挂画 点茶 插花", "清河坊 宋代风情",
+    "南宋 铜钱 皇宋通宝", "南宋 铁钱 遗迹", "南宋 地图 舆图 杭州"
+]
 def scrape_baidu(session, existing_urls, start_idx):
     print("\n" + "=" * 55)
     print("  ⭐ [数据源 1] 百度图片极速版")
@@ -167,68 +166,58 @@ def scrape_baidu(session, existing_urls, start_idx):
 
     for qi, q in enumerate(BAIDU_QUERIES):
         print(f"\n  [{qi+1}/{len(BAIDU_QUERIES)}] {q}")
-
-        params = {
-            "tn": "resultjson_com", "ipn": "rj", "ct": "201326592",
-            "fp": "result", "word": q, "queryWord": q, "cl": "2",
-            "lm": "-1", "ie": "utf-8", "oe": "utf-8", "st": "-1",
-            "ic": "0", "istype": "2", "pn": "0", "rn": "20",
-        }
-        
-        try:
-            url = "https://image.baidu.com/search/acjson?" + "&".join(f"{k}={v}" for k, v in params.items())
-            hdrs = {"Referer": "https://image.baidu.com/", "Accept": "application/json"}
-            resp = make_request(session, url, headers=hdrs)
-            
-            if resp.status_code != 200:
-                print(f"    接口请求失败 ({resp.status_code})"); continue
-                
-            # 处理百度偶尔返回的非标准 JSON
-            text = resp.text.replace("\\'", "'")
-            data = json.loads(text)
-        except Exception as e:
-            print(f"    API 失败: {str(e)[:60]}"); continue
-
-        items = data.get("data", [])
-        if not items:
-            print("    无结果")
-            continue
-            
         cnt = 0
-        for item in items:
-            if not isinstance(item, dict): continue
+        for page in range(3): # 尝试抓取 3 页
             if cnt >= MAX_PER_QUERY: break
+            pn = page * 30
             
-            # 使用原图，备用缩略图
-            img_url = item.get("hoverURL") or item.get("middleURL") or item.get("thumbURL") or item.get("objURL", "")
-            if not img_url or img_url in existing_urls:
-                continue
+            params = {
+                "tn": "resultjson_com", "ipn": "rj", "ct": "201326592",
+                "fp": "result", "word": q, "queryWord": q, "cl": "2",
+                "lm": "-1", "ie": "utf-8", "oe": "utf-8", "st": "-1",
+                "ic": "0", "istype": "2", "pn": str(pn), "rn": "30",
+            }
+            
+            try:
+                url = "https://image.baidu.com/search/acjson?" + "&".join(f"{k}={v}" for k, v in params.items())
+                hdrs = {"Referer": "https://image.baidu.com/", "Accept": "application/json"}
+                resp = make_request(session, url, headers=hdrs)
                 
-            from_title = item.get("fromPageTitleEnc", "") or item.get("fromPageTitle", "")
-            from_title = re.sub(r'<[^>]+>', '', from_title) # 清理 HTML 标签
-            
-            h = md5(img_url.encode()).hexdigest()[:8]
-            ext = "jpg" if ".jpg" in img_url.lower() else "png"
-            fn = f"baidu_{idx:03d}_{sanitize_fn(q[:20])}_{h}.{ext}"
-            
-            print(f"    -> {fn}")
-            # 必须带百度的 Referer 才能下载大图
-            if download(session, img_url, IMAGE_DIR / fn, referer="https://image.baidu.com/"):
-                entries.append({
-                    "filename": fn,
-                    "title": from_title or q,
-                    "description": f"百度图片: {q}",
-                    "categories": ["百度图片"],
-                    "original_url": img_url,
-                    "source": "Baidu Images",
-                })
-                existing_urls.add(img_url)
-                idx += 1
-                cnt += 1
+                if resp.status_code != 200:
+                    print(f"    接口请求失败 ({resp.status_code})"); continue
+                data = json.loads(resp.text.replace("\\'", "'"))
+            except Exception as e:
+                print(f"    API 失败: {str(e)[:60]}"); continue
+
+            items = data.get("data", [])
+            for item in items:
+                if not isinstance(item, dict): continue
+                if cnt >= MAX_PER_QUERY: break
                 
-            time.sleep(DOWNLOAD_DELAY)
+                img_url = item.get("hoverURL") or item.get("middleURL") or item.get("thumbURL") or item.get("objURL", "")
+                if not img_url or img_url in existing_urls:
+                    continue
+                    
+                from_title = item.get("fromPageTitleEnc", "") or item.get("fromPageTitle", "")
+                from_title = re.sub(r'<[^>]+>', '', from_title)
+                
+                h = md5(img_url.encode()).hexdigest()[:8]
+                ext = "jpg" if ".jpg" in img_url.lower() else "png"
+                fn = f"baidu_{idx:03d}_{sanitize_fn(q[:20])}_{h}.{ext}"
+                
+                if download(session, img_url, IMAGE_DIR / fn, referer="https://image.baidu.com/"):
+                    print(f"    [{cnt+1}/{MAX_PER_QUERY}] {fn}")
+                    entries.append({
+                        "filename": fn, "title": from_title or q,
+                        "description": f"百度图片: {q}", "categories": ["百度图片"],
+                        "original_url": img_url, "source": "Baidu Images",
+                    })
+                    existing_urls.add(img_url)
+                    idx += 1
+                    cnt += 1
+                time.sleep(DOWNLOAD_DELAY * random.uniform(0.5, 1.5))
             
-        print(f"    +{cnt}")
+        print(f"    共计新增: {cnt}")
     return entries, idx
 
 
@@ -239,6 +228,10 @@ WIKI_QUERIES = [
     "Southern Song dynasty painting",
     "West Lake Hangzhou",
     "Song dynasty Longquan celadon",
+    "Ma Yuan painting",
+    "Xia Gui painting",
+    "Southern Song Ceramics",
+    "Southern Song Calligraphy"
 ]
 
 def scrape_wikimedia(session, existing_urls, start_idx):

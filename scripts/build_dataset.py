@@ -15,12 +15,22 @@ import json
 import base64
 import random
 import argparse
+import logging
 from pathlib import Path
 from io import BytesIO
 from PIL import Image
 
+# ============ 日志配置 ============
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
 # ============ 配置 ============
 ANNOTATION_FILE = Path("data/annotations.json")
+AUGMENTED_FILE = Path("data/annotations_augmented.json")
 IMAGE_DIR = Path("data/images")
 OUTPUT_DIR = Path("../clip_data/datasets/SongDynasty")  # Chinese-CLIP 约定
 TRAIN_RATIO = 0.8
@@ -73,25 +83,44 @@ def build_texts_for_image(ann: dict) -> list:
 
 
 def main():
-    import sys
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     parser = argparse.ArgumentParser(description="构建 Chinese-CLIP 数据集")
     parser.add_argument("--annotation", type=str, default=str(ANNOTATION_FILE))
+    parser.add_argument("--augmented", type=str, default=str(AUGMENTED_FILE))
+    parser.add_argument("--aug_weight", type=float, default=0.3, help="扩增文本的降采样比例 (0.0~1.0)")
     parser.add_argument("--image_dir", type=str, default=str(IMAGE_DIR))
     parser.add_argument("--output_dir", type=str, default=str(OUTPUT_DIR))
     parser.add_argument("--train_ratio", type=float, default=TRAIN_RATIO)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
+    random.seed(args.seed)
     annotation_file = Path(args.annotation)
+    augmented_file = Path(args.augmented)
     image_dir = Path(args.image_dir)
     output_dir = Path(args.output_dir)
 
-    # 加载标注
+    # 1. 加载主标注
     with open(annotation_file, "r", encoding="utf-8") as f:
         annotations = json.load(f)
-    print(f"📋 加载标注: {len(annotations)} 条")
+    logger.info(f"加载主标注: {len(annotations)} 条")
+
+    # 2. 加载扩增标注（可选）
+    if augmented_file.exists():
+        with open(augmented_file, "r", encoding="utf-8") as f:
+            aug_anns = json.load(f)
+        logger.info(f"加载扩增标注: {len(aug_anns)} 条 (采样率: {args.aug_weight})")
+        
+        # 降采样过滤
+        sampled_augs = [
+            ann for ann in aug_anns 
+            if random.random() < args.aug_weight
+        ]
+        logger.info(f"降采样后扩增保留: {len(sampled_augs)} 条")
+        
+        # 合并非就绪字典：为了区分，给扩增数据打个 tag
+        for ann in sampled_augs:
+            ann["_is_augmented"] = True
+        annotations.extend(sampled_augs)
 
     # 过滤掉没有图片文件的记录
     valid = []
@@ -100,17 +129,17 @@ def main():
         if img_path.exists():
             valid.append(ann)
         else:
-            print(f"  ⚠️ 图片不存在，跳过: {ann['filename']}")
-    print(f"   有效记录: {len(valid)} 条")
+            if not ann.get("_is_augmented", False): # 仅报告主数据缺失
+                logger.warning(f"图片不存在，跳过: {ann['filename']}")
+    logger.info(f"有效记录总计: {len(valid)} 条")
 
     if len(valid) < 5:
-        print("❌ 图片数量太少（<5），无法构建有效数据集")
+        logger.error("图片数量太少（<5），无法构建有效数据集")
         return
 
     # 打乱并按 **图片** 划分 train/valid 避免泄露
     # 同一张图片的所有变体描述只会分到同一边
     unique_filenames = list(set([ann["filename"] for ann in valid]))
-    random.seed(args.seed)
     random.shuffle(unique_filenames)
     
     split_img_idx = int(len(unique_filenames) * args.train_ratio)
@@ -121,8 +150,8 @@ def main():
         "valid": [ann for ann in valid if ann["filename"] not in train_filenames],
     }
     
-    print(f"   按图片切分: 训练集包含 {len(train_filenames)} 张原图 | 验证集包含 {len(unique_filenames) - len(train_filenames)} 张原图")
-    print(f"   最终记录数: 训练集 {len(splits['train'])} 条 | 验证集 {len(splits['valid'])} 条")
+    logger.info(f"按图片切分: 训练集 {len(train_filenames)} 图 | 验证集 {len(unique_filenames) - len(train_filenames)} 图")
+    logger.info(f"记录切分: 训练集 {len(splits['train'])} 条 | 验证集 {len(splits['valid'])} 条")
 
     # 生成数据文件
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -155,7 +184,7 @@ def main():
                     b64 = image_to_base64(img_path)
                     f_tsv.write(f"{image_id}\t{b64}\n")
                 except Exception as e:
-                    print(f"  ⚠️ 图片处理失败: {ann_master['filename']}: {e}")
+                    logger.warning(f"图片处理失败: {ann_master['filename']}: {e}")
                     continue
 
                 # 收集所有此图片的标注
@@ -173,14 +202,12 @@ def main():
                         f_jsonl.write(json.dumps(entry, ensure_ascii=False) + "\n")
                         text_id_counter += 1
 
-        print(f"   ✅ {split_name}: {len(split_data)} 图 | {text_id_counter} 文本对")
-        print(f"      {tsv_path}")
-        print(f"      {jsonl_path}")
+        logger.info(f"✅ {split_name}: {len(split_unique_ann)} 图 | {text_id_counter} 文本对")
+        logger.info(f"   -> {tsv_path}")
+        logger.info(f"   -> {jsonl_path}")
 
-    print(f"\n📁 数据文件输出: {output_dir.resolve()}")
-    print(f"\n下一步：运行 LMDB 转换:")
-    print(f"  python cn_clip/preprocess/build_lmdb_dataset.py \\")
-    print(f"    --data_dir {output_dir} --splits train,valid")
+    logger.info(f"📁 数据文件输出完毕: {output_dir.resolve()}")
+    logger.info(f"下一步建议运行: python cn_clip/preprocess/build_lmdb_dataset.py --data_dir {output_dir} --splits train,valid")
 
 
 if __name__ == "__main__":

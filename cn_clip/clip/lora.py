@@ -57,7 +57,7 @@ class LoRALinear(nn.Module):
         return torch.nn.functional.linear(x, self.weight, self.bias)
 
 
-def inject_lora(model, rank: int = 4, alpha: float = 16.0) -> list:
+def inject_lora(model, rank: int = 4, alpha: float = 16.0, text_only: bool = False) -> list:
     """将 LoRA 注入到 Chinese-CLIP 的视觉编码器和文本编码器。
 
     注入策略：
@@ -68,6 +68,7 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0) -> list:
         model: Chinese-CLIP 模型
         rank: LoRA 秩（推荐 4 或 8）
         alpha: 缩放因子
+        text_only: 是否仅对文本编码器注入 LoRA（缓解灾难性遗忘）
 
     Returns:
         LoRA 参数列表（用于优化器）
@@ -75,12 +76,34 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0) -> list:
     lora_params = []
 
     for name, module in model.named_modules():
-        # ---- ViT 视觉编码器: out_proj ----
-        if isinstance(module, nn.MultiheadAttention):
-            old_proj = module.out_proj
-            new_proj = LoRALinear(old_proj, rank=rank, alpha=alpha)
-            module.out_proj = new_proj
-            lora_params.extend([new_proj.lora_A, new_proj.lora_B])
+        # ---- ViT 视觉编码器: q_proj, v_proj, out_proj ----
+        if not text_only and isinstance(module, nn.MultiheadAttention):
+            # 注入 out_proj
+            if getattr(module, "out_proj", None) is not None:
+                old_out = module.out_proj
+                new_out = LoRALinear(old_out, rank=rank, alpha=alpha)
+                module.out_proj = new_out
+                lora_params.extend([new_out.lora_A, new_out.lora_B])
+                
+            # PyTorch 的 MultiheadAttention 有时使用分离的 q_proj_weight, k_proj_weight, v_proj_weight
+            # 如果存在分离的 q 和 v 偏置/权重，我们可以直接替换（这里为了简便直接对有独立 linear 的进行替换）
+            if getattr(module, "q_proj", None) is not None:
+                old_q = module.q_proj
+                new_q = LoRALinear(old_q, rank=rank, alpha=alpha)
+                module.q_proj = new_q
+                lora_params.extend([new_q.lora_A, new_q.lora_B])
+                
+            if getattr(module, "v_proj", None) is not None:
+                old_v = module.v_proj
+                new_v = LoRALinear(old_v, rank=rank, alpha=alpha)
+                module.v_proj = new_v
+                lora_params.extend([new_v.lora_A, new_v.lora_B])
+            
+            if getattr(module, "k_proj", None) is not None:
+                old_k = module.k_proj
+                new_k = LoRALinear(old_k, rank=rank, alpha=alpha)
+                module.k_proj = new_k
+                lora_params.extend([new_k.lora_A, new_k.lora_B])
 
         # ---- RoBERTa 文本编码器: query + value ----
         # 用类名匹配避免循环导入

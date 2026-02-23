@@ -23,7 +23,16 @@ import sys
 import json
 import argparse
 import time
+import logging
 from pathlib import Path
+
+# ============ 日志配置 ============
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 import torch
 import torch.nn as nn
@@ -84,7 +93,7 @@ class LMDBDataset(Dataset):
         return image, text_tokens
 
 
-def contrastive_loss(image_features, text_features, logit_scale, label_smoothing=0.1):
+def contrastive_loss(image_features, text_features, logit_scale, label_smoothing=0.05):
     """InfoNCE 对比损失，增加 Label Smoothing 缓解小数据集过拟合"""
     image_features = F.normalize(image_features, dim=-1)
     text_features = F.normalize(text_features, dim=-1)
@@ -102,9 +111,6 @@ def contrastive_loss(image_features, text_features, logit_scale, label_smoothing
 
 
 def main():
-    import sys
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     parser = argparse.ArgumentParser(description="Chinese-CLIP + LoRA 训练")
     parser.add_argument("--data_dir", type=str, default="../clip_data/datasets/SongDynasty/lmdb/train")
     parser.add_argument("--val_dir", type=str, default="../clip_data/datasets/SongDynasty/lmdb/valid")
@@ -115,40 +121,44 @@ def main():
     parser.add_argument("--alpha", type=float, default=16.0, help="LoRA alpha")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--accum_freq", type=int, default=4, help="梯度累积步数，等效 batch = batch_size * accum_freq")
-    parser.add_argument("--lr", type=float, default=5e-5)
-    parser.add_argument("--wd", type=float, default=0.1)
-    parser.add_argument("--epochs", type=int, default=60)
+    parser.add_argument("--lr", type=float, default=5e-5)   
+    parser.add_argument("--wd", type=float, default=0.05)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--fp16", action="store_true", default=True)
+    parser.add_argument("--text_only", action="store_true", default=False, help="是否仅微调文本编码器（防止灾难性遗忘）")
     parser.add_argument("--save_every", type=int, default=5, help="每 N 个 epoch 保存一次")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"🔧 设备: {device}")
+    logger.info(f"🔧 设备: {device}")
 
     # 1. 加载模型
-    print("📦 加载 Chinese-CLIP ViT-B-16...")
+    logger.info("📦 加载 Chinese-CLIP ViT-B-16...")
     model, preprocess = load_from_name("ViT-B-16", device=device, download_root=args.pretrained)
     
     # 强制将模型从半精度（FP16）转换为单精度（FP32），兼容 PyTorch 原生 AMP
     model.float()
 
     # 2. 注入 LoRA
-    print(f"🔗 注入 LoRA (rank={args.rank}, alpha={args.alpha})...")
-    lora_params = inject_lora(model, rank=args.rank, alpha=args.alpha)
+    logger.info(f"🔗 注入 LoRA (rank={args.rank}, alpha={args.alpha}, text_only={args.text_only})...")
+    lora_params = inject_lora(model, rank=args.rank, alpha=args.alpha, text_only=args.text_only)
 
-    # 3. 冻结非 LoRA 参数
+    # 3. 冻结非 LoRA 参数（并确保 logit_scale 不被更新避免极度自信过拟合）
     for name, param in model.named_parameters():
         if "lora_" not in name:
             param.requires_grad = False
+    
+    if hasattr(model, "logit_scale"):
+        model.logit_scale.requires_grad = False
 
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"📊 总参数: {total:,} | 可训练(LoRA): {trainable:,} | 占比: {trainable/total*100:.2f}%")
+    logger.info(f"📊 总参数: {total:,} | 可训练(LoRA): {trainable:,} | 占比: {trainable/total*100:.2f}%")
 
     # 4. 数据集
-    print("📂 加载数据集...")
+    logger.info("📂 加载数据集...")
     train_dataset = LMDBDataset(args.data_dir, preprocess)
-    print(f"   训练集: {len(train_dataset)} 对")
+    logger.info(f"训练集: {len(train_dataset)} 对")
 
     train_loader = DataLoader(
         train_dataset,
@@ -163,7 +173,7 @@ def main():
     if os.path.isdir(args.val_dir):
         val_dataset = LMDBDataset(args.val_dir, preprocess)
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-        print(f"   验证集: {len(val_dataset)} 对")
+        logger.info(f"验证集: {len(val_dataset)} 对")
 
     # 5. 优化器
     optimizer = torch.optim.AdamW(
@@ -183,7 +193,7 @@ def main():
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-    print(f"📈 学习率调度: Warmup {warmup_steps} steps → Cosine decay, 总 {total_steps} steps")
+    logger.info(f"📈 学习率调度: Warmup {warmup_steps} steps → Cosine decay, 总 {total_steps} steps")
 
     # 7. 混合精度
     scaler = torch.amp.GradScaler("cuda") if args.fp16 and device == "cuda" else None
@@ -193,51 +203,74 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 9. 训练循环
-    print(f"\n🚀 开始训练（{args.epochs} epochs, 等效 batch = {args.batch_size * args.accum_freq}）\n")
+    # 关键：对比学习的负样本数量 = batch_size - 1
+    # 必须在累积后的大 batch 上计算 contrastive loss，而不是每个 mini-batch 独立计算
+    effective_batch = args.batch_size * args.accum_freq
+    logger.info(f"🚀 开始训练（{args.epochs} epochs, 对比学习 batch = {effective_batch}）")
     best_val_loss = float("inf")
+
+    # 初始化训练日志
+    log_path = output_dir / "training_log.csv"
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write("epoch,train_loss,val_loss,lr,is_best\n")
+    logger.info(f"📝 训练日志: {log_path}")
 
     for epoch in range(args.epochs):
         model.train()
         epoch_loss = 0.0
-        num_batches = 0
+        num_updates = 0
         optimizer.zero_grad()
+
+        # 累积特征的缓冲区
+        accum_img_feats = []
+        accum_txt_feats = []
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")
         for step, (images, texts) in enumerate(pbar):
             images = images.to(device)
             texts = texts.to(device)
 
+            # Forward: 提取特征并保留计算图
             if scaler is not None:
                 with torch.amp.autocast("cuda"):
-                    image_features = model.encode_image(images)
-                    text_features = model.encode_text(texts)
-                    loss = contrastive_loss(image_features, text_features, model.logit_scale.exp())
-                    loss = loss / args.accum_freq
+                    img_f = model.encode_image(images)
+                    txt_f = model.encode_text(texts)
+            else:
+                img_f = model.encode_image(images)
+                txt_f = model.encode_text(texts)
 
-                scaler.scale(loss).backward()
+            accum_img_feats.append(img_f)
+            accum_txt_feats.append(txt_f)
 
-                if (step + 1) % args.accum_freq == 0:
+            # 每累积 accum_freq 个 mini-batch，拼接成大 batch 计算 Loss
+            if (step + 1) % args.accum_freq == 0:
+                all_img = torch.cat(accum_img_feats, dim=0)
+                all_txt = torch.cat(accum_txt_feats, dim=0)
+
+                if scaler is not None:
+                    with torch.amp.autocast("cuda"):
+                        loss = contrastive_loss(all_img, all_txt, model.logit_scale.exp())
+                    scaler.scale(loss).backward()
                     scaler.step(optimizer)
                     scaler.update()
-                    optimizer.zero_grad()
-                    scheduler.step()
-            else:
-                image_features = model.encode_image(images)
-                text_features = model.encode_text(texts)
-                loss = contrastive_loss(image_features, text_features, model.logit_scale.exp())
-                loss = loss / args.accum_freq
-                loss.backward()
-
-                if (step + 1) % args.accum_freq == 0:
+                else:
+                    loss = contrastive_loss(all_img, all_txt, model.logit_scale.exp())
+                    loss.backward()
                     optimizer.step()
-                    optimizer.zero_grad()
-                    scheduler.step()
 
-            epoch_loss += loss.item() * args.accum_freq
-            num_batches += 1
-            pbar.set_postfix(loss=f"{epoch_loss/num_batches:.4f}")
+                optimizer.zero_grad()
+                scheduler.step()
 
-        avg_loss = epoch_loss / max(num_batches, 1)
+                epoch_loss += loss.item()
+                num_updates += 1
+
+                # 清空累积缓冲
+                accum_img_feats = []
+                accum_txt_feats = []
+
+            pbar.set_postfix(loss=f"{epoch_loss/max(num_updates,1):.4f}")
+
+        avg_loss = epoch_loss / max(num_updates, 1)
 
         # 验证
         val_msg = ""
@@ -268,19 +301,26 @@ def main():
                 torch.save(get_lora_state_dict(model), save_path)
                 val_msg += " ⭐ best"
 
-        print(f"  Epoch {epoch+1}: train_loss={avg_loss:.4f}{val_msg}")
+        logger.info(f"Epoch {epoch+1}: train_loss={avg_loss:.4f}{val_msg}")
+
+        # 记录日志
+        current_lr = optimizer.param_groups[0]["lr"]
+        avg_val_str = f"{avg_val:.6f}" if val_dataset is not None else ""
+        is_best = "⭐" if val_msg and "⭐" in val_msg else ""
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{epoch+1},{avg_loss:.6f},{avg_val_str},{current_lr:.8f},{is_best}\n")
 
         # 定期保存
         if (epoch + 1) % args.save_every == 0:
             save_path = output_dir / f"lora_epoch{epoch+1}.pt"
             torch.save(get_lora_state_dict(model), save_path)
-            print(f"  💾 保存: {save_path}")
+            logger.info(f"💾 保存: {save_path}")
 
     # 保存最终模型
     final_path = output_dir / "lora_final.pt"
     torch.save(get_lora_state_dict(model), final_path)
-    print(f"\n🎉 训练完成！最终 LoRA 权重: {final_path}")
-    print(f"   最佳验证 loss: {best_val_loss:.4f}")
+    logger.info(f"🎉 训练完成！最终 LoRA 权重: {final_path}")
+    logger.info(f"最佳验证 loss: {best_val_loss:.4f}")
 
 
 if __name__ == "__main__":

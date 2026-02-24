@@ -54,9 +54,11 @@ def load_eval_data(lmdb_dir: str, preprocess):
     # 收集所有图文对
     pairs = []
     with env_pairs.begin() as txn:
-        num_pairs = txn.stat()["entries"]
-        for i in range(num_pairs):
-            data = pickle.loads(txn.get(str(i).encode("utf-8")))
+        cursor = txn.cursor()
+        for key, value in cursor:
+            if key == b"num_samples":
+                continue
+            data = pickle.loads(value)
             image_id, text_id, text = data
             pairs.append((image_id, text))
 
@@ -308,7 +310,7 @@ def main():
         zs = all_results["zeroshot"]
         lo = all_results["lora"]
         for direction, label in [("text_to_image", "T→I"), ("image_to_text", "I→T")]:
-            for k in ["R@1", "R@5", "R@10", "MR", "mAP", "NDCG@5"]:
+            for k in ["R@1", "R@5", "R@10", "MR", "mAP", "NDCG@10"]:
                 z = zs[direction].get(k, 0)
                 l = lo[direction].get(k, 0)
                 delta = l - z

@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============ 配置 ============
-ANNOTATION_FILE = Path("data/annotations.json")
+ANNOTATION_FILE = Path("data/annotations_cleaned.json")
 AUGMENTED_FILE = Path("data/annotations_augmented.json")
 IMAGE_DIR = Path("data/images")
 OUTPUT_DIR = Path("../clip_data/datasets/SongDynasty")  # Chinese-CLIP 约定

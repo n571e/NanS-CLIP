@@ -13,13 +13,15 @@ import torch.nn as nn
 
 
 class LoRALinear(nn.Module):
-    """在冻结的 Linear 层上叠加 LoRA 低秩更新。
-
-    原理: W' = W + (alpha/r) * B @ A
+    """
+    DoRA (Weight-Decomposed Low-Rank Adaptation) 模块实现。
+    
+    原理: W_dora = m * (W + B @ A) / ||W + B @ A||_c
     - W: 原始冻结权重
     - A: (rank, in_features), Kaiming 初始化
     - B: (out_features, rank), 零初始化
-    - 初始 ΔW = B @ A = 0，不破坏预训练模型
+    - m: (out_features,), 独立可学习的幅度 (Magnitude) 向量，初始化为原有 W 的列范数
+    相比普通 LoRA，对 Domain Shift 问题具有更强的拟合能力。
     """
 
     def __init__(self, original_linear: nn.Linear, rank: int = 4, alpha: float = 16.0):
@@ -33,21 +35,32 @@ class LoRALinear(nn.Module):
         if self.original_linear.bias is not None:
             self.original_linear.bias.requires_grad = False
 
-        # LoRA 低秩矩阵
         device_ = original_linear.weight.device
         dtype_ = original_linear.weight.dtype
+
+        # LoRA 低秩方向矩阵
         self.lora_A = nn.Parameter(torch.empty(rank, in_features, device=device_, dtype=dtype_))
         self.lora_B = nn.Parameter(torch.zeros(out_features, rank, device=device_, dtype=dtype_))
-
-        # A 用 Kaiming 初始化，B 用零初始化
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
 
         self.scaling = alpha / rank
 
+        # DoRA 幅度 (Magnitude) 向量 m
+        # 初始化为原始每一行的 L2 范数 (因为 PyTorch Linear 的 weight 是 out_features x in_features)
+        with torch.no_grad():
+            initial_mag = self.original_linear.weight.norm(p=2, dim=1, keepdim=True)
+        self.m = nn.Parameter(initial_mag.clone().detach())
+
     @property
     def weight(self):
-        # 实时计算组合后的权重，保证梯度能回传到 lora_A 和 lora_B
-        return self.original_linear.weight + (self.lora_B @ self.lora_A) * self.scaling
+        # 1. 组合计算未归一化的总体方向矩阵 V = W + \Delta W
+        V = self.original_linear.weight + (self.lora_B @ self.lora_A) * self.scaling
+        
+        # 2. 计算 V 的列范数 (维度 1 对应 in_features 维度求平方和开根号)
+        V_norm = V.norm(p=2, dim=1, keepdim=True) + 1e-8
+        
+        # 3. 乘上可学习的幅度标量 self.m
+        return self.m * (V / V_norm)
 
     @property
     def bias(self):

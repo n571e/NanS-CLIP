@@ -49,7 +49,7 @@ class LoRALinear(nn.Module):
         # 初始化为原始每一行的 L2 范数 (因为 PyTorch Linear 的 weight 是 out_features x in_features)
         with torch.no_grad():
             initial_mag = self.original_linear.weight.norm(p=2, dim=1, keepdim=True)
-        self.m = nn.Parameter(initial_mag.clone().detach())
+        self.lora_m = nn.Parameter(initial_mag.clone().detach())
 
     @property
     def weight(self):
@@ -59,8 +59,8 @@ class LoRALinear(nn.Module):
         # 2. 计算 V 的列范数 (维度 1 对应 in_features 维度求平方和开根号)
         V_norm = V.norm(p=2, dim=1, keepdim=True) + 1e-8
         
-        # 3. 乘上可学习的幅度标量 self.m
-        return self.m * (V / V_norm)
+        # 3. 乘上可学习的幅度标量 self.lora_m
+        return self.lora_m * (V / V_norm)
 
     @property
     def bias(self):
@@ -96,7 +96,7 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0, text_only: bool = Fal
                 old_out = module.out_proj
                 new_out = LoRALinear(old_out, rank=rank, alpha=alpha)
                 module.out_proj = new_out
-                lora_params.extend([new_out.lora_A, new_out.lora_B])
+                lora_params.extend([new_out.lora_A, new_out.lora_B, new_out.lora_m])
                 
             # PyTorch 的 MultiheadAttention 有时使用分离的 q_proj_weight, k_proj_weight, v_proj_weight
             # 如果存在分离的 q 和 v 偏置/权重，我们可以直接替换（这里为了简便直接对有独立 linear 的进行替换）
@@ -104,19 +104,19 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0, text_only: bool = Fal
                 old_q = module.q_proj
                 new_q = LoRALinear(old_q, rank=rank, alpha=alpha)
                 module.q_proj = new_q
-                lora_params.extend([new_q.lora_A, new_q.lora_B])
+                lora_params.extend([new_q.lora_A, new_q.lora_B, new_q.lora_m])
                 
             if getattr(module, "v_proj", None) is not None:
                 old_v = module.v_proj
                 new_v = LoRALinear(old_v, rank=rank, alpha=alpha)
                 module.v_proj = new_v
-                lora_params.extend([new_v.lora_A, new_v.lora_B])
+                lora_params.extend([new_v.lora_A, new_v.lora_B, new_v.lora_m])
             
             if getattr(module, "k_proj", None) is not None:
                 old_k = module.k_proj
                 new_k = LoRALinear(old_k, rank=rank, alpha=alpha)
                 module.k_proj = new_k
-                lora_params.extend([new_k.lora_A, new_k.lora_B])
+                lora_params.extend([new_k.lora_A, new_k.lora_B, new_k.lora_m])
 
         # ---- RoBERTa 文本编码器: query + value ----
         # 用类名匹配避免循环导入
@@ -125,13 +125,13 @@ def inject_lora(model, rank: int = 4, alpha: float = 16.0, text_only: bool = Fal
             old_q = module.query
             new_q = LoRALinear(old_q, rank=rank, alpha=alpha)
             module.query = new_q
-            lora_params.extend([new_q.lora_A, new_q.lora_B])
+            lora_params.extend([new_q.lora_A, new_q.lora_B, new_q.lora_m])
 
             # 注入 value 投影
             old_v = module.value
             new_v = LoRALinear(old_v, rank=rank, alpha=alpha)
             module.value = new_v
-            lora_params.extend([new_v.lora_A, new_v.lora_B])
+            lora_params.extend([new_v.lora_A, new_v.lora_B, new_v.lora_m])
 
     return lora_params
 

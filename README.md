@@ -1,19 +1,74 @@
-[**中文说明**](README.md) | [**English**](README_En.md)
+# NanS-CLIP: 南宋文化多模态跨模态检索系统 🏺📜
 
 <p align="center">
     <br>
     <img src="assets/Chinese_CLIP_logo_tp_path.svg" width="400" />
     <br>
 <p>
+
+> 基于经典的 **Chinese-CLIP (ViT-B-16 + RoBERTa-wwm)** 架构深度改造。本项目针对**南宋古籍与历史文物**这一极度缺乏高质量图文数据的垂直领域，不仅构建了完整的数据蒸馏飞轮，还在底层代码级别实现了极致的参数高效微调 (PEFT)。
+
+---
+
+## 🌟 项目亮点与核心贡献
+
+- **知识蒸馏与数据飞轮**：以 `Qwen-VL-Plus` 为 Teacher 模型，基于爬取的 5585 张 Wikimedia/博物馆源图片元数据设计自适应 Prompt 模板。应用“1图生4文”流形扩展策略，生成多维度文本（白话/古文/标签等）。引入 Zero-Shot CLIP 反向验证清洗，构建了含 **5,500+ 高清图与 21,000+ 高质量文本对**的南宋专属数据集，并依靠 **LMDB 架构**消除磁盘 IO 瓶颈。
+- **DoRA 原生手写注入**：为控制显存与缓解过拟合，直接在底层 `lora.py` 中推导并实现了 **DoRA (Weight-Decomposed LoRA)** 机制。精准替换了原模型 ViT 的 `out_proj` 及 RoBERTa 的 `query`，`value` 共 36 处投影点。仅需训练 **0.25%**（约 470K）参数即可完成模型极致微调。
+- **工程级训练优化**：实现了 **梯度累积 (Gradient Accumulation)** 突破对比学习负样本池瓶颈，结合 **PyTorch AMP (自动混合精度)** 倍速训练，并搭配 Cosine LR 学习率衰减，实现了单卡极低资源的平稳收敛。
+
+## 📊 评估表现 (Evaluation)
+
+模型在保留预训练通用知识的同时，实现了向南宋古籍垂直领域的深度适应。在混入高难度干扰项（520张不相关现代图 Hard Negatives）的鲁棒性独立测试集中：
+
+| 指标 | Zero-Shot Baseline | DoRA 注入微调版本 | 净空提升点数 |
+|---|---|---|---|
+| **Text→Image R@1**  | 18.7% | **41.4%** | **+22.7 pp** |
+| **Text→Image R@5**  | 42.9% | **63.7%** | **+20.8 pp** |
+| **Text→Image R@10** | 56.7% | 77.5% | +20.8 pp |
+| **Text→Image mAP**  | 30.8% | **45.9%** | **+15.1 pp** |
+| **Image→Text R@1**  | 28.9% | **50.8%** | **+21.9 pp** |
+| **Image→Text R@5**  | 56.6% | **70.5%** | **+13.9 pp** |
+
+*（验证结果展现了 NanS-CLIP 攻克了垂直领域图文特征空间极大 Domain Gap 的对齐难题）*
+
+## 🗺️ 系统工程拓扑图
+
+```mermaid
+flowchart TD
+    subgraph 数据层
+        A["🌐 结构化爬虫\nscrape_wikimedia.py\n(55+ 南宋特定关键词搜刮)"] --> B
+        B["🤖 知识蒸馏 (VLM 标注)\nauto_annotate.py\n(1图→4文 发散生成)"] --> C
+        C["🧹 CLIP 反向过滤\nfilter_annotations.py\n(相似度<0.20截断)"] --> D
+        D{"📦 LMDB 极速数据库\n(O(1) 预取 5k图/2.1w文)\nbuild_lmdb_dataset.py"}
+    end
+
+    subgraph 构架层
+        D --> E["🔧 冻结 CLIP 骨干层数"]
+        E --> F["🧬 DoRA (Weight-Decomposed)\n12*ViT(out_proj) + 24*RoBERTa(Q+V)\n参数= 470,016 (0.25%)"]
+    end
+
+    subgraph 训练与应用层
+        F --> G["🚀 InfoNCE\n(梯度累积 / AMP 倍速 / Cosine)"]
+        G --> H["🏆 R@K/mAP 指标评估\nevaluate.py"]
+    end
+```
+
+---
+
+<details>
+<summary><b>点击展开查看：原始 Chinese-CLIP 官方使用文档与模型指南</b></summary>
 <br>
+
+[**中文说明**](README.md) | [**English**](README_En.md)
 
 <p align="center">
         <a href="https://www.modelscope.cn/models?name=clip&tasks=multi-modal-embedding">ModelScope</a>&nbsp; ｜ &nbsp;<a href="https://www.modelscope.cn/studios/damo/chinese_clip_applications/summary">Demo</a>&nbsp; ｜ &nbsp;<a href="https://arxiv.org/abs/2211.01335">Paper</a>&nbsp; ｜ &nbsp;<a href="https://qwenlm.github.io/zh/blog/chinese-clip/">Blog</a>
 </p>
-<br><br>
 
-本项目为CLIP模型的**中文**版本，使用大规模中文数据进行训练（~2亿图文对），旨在帮助用户快速实现中文领域的[图文特征&相似度计算](#API快速上手)、[跨模态检索](#跨模态检索)、[零样本图片分类](#零样本图像分类)等任务。本项目代码基于<b>[open_clip project](https://github.com/mlfoundations/open_clip)</b>建设，并针对中文领域数据以及在中文数据上实现更好的效果做了优化。本项目提供了API、训练代码和测试代码，下文中将详细介绍细节。
-<br><br>
+本项目基石为核心 CLIP 模型的**中文**版本 (Chinese-CLIP)，使用大规模中文数据进行训练（~2亿图文对），旨在帮助用户快速实现中文领域的图文特征&相似度计算、跨模态检索、零样本图片分类等任务。本项目代码基于<b>[open_clip project](https://github.com/mlfoundations/open_clip)</b>建设。下面保留了原本详尽的官方使用指南：
+
+<br>
+
 
 # 新闻
 * 2023.11.30 Chinese-CLIP添加了转换Pytorch模型为coreml格式的[转换脚本](https://github.com/OFA-Sys/Chinese-CLIP/blob/master/cn_clip/deploy/pytorch_to_coreml.py)，用于部署。（感谢[@manymuch](https://github.com/manymuch)贡献代码❤️）
@@ -582,3 +637,4 @@ zeroshot-top1: 0.6444
   year={2022}
 }
 ```
+</details>

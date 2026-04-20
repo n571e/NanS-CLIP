@@ -110,6 +110,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+web_demo/frontend/node_modules/
+web_demo/frontend/dist/
 env/
 venv/
 ENV/

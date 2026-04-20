@@ -1,0 +1,525 @@
+<style>
+  :root {
+    --paper: #f5f4ed;
+    --ivory: #faf9f5;
+    --sand: #e8e6dc;
+    --ink: #141413;
+    --olive: #5e5d59;
+    --stone: #87867f;
+    --brand: #c96442;
+    --warm-line: #e6e1d4;
+  }
+
+  .lead {
+    max-width: 860px;
+    color: var(--olive);
+    line-height: 1.65;
+    margin-bottom: 28px;
+  }
+
+  .top-note {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(201, 100, 66, 0.1);
+    color: var(--brand);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    border-radius: 24px;
+    overflow: hidden;
+    background: var(--ivory);
+    border: 1px solid var(--warm-line);
+    box-shadow: rgba(0, 0, 0, 0.05) 0px 10px 30px;
+    cursor: pointer;
+  }
+
+  .card-body {
+    padding: 18px 18px 20px;
+  }
+
+  .card-body h3 {
+    font-size: 27px;
+    line-height: 1.2;
+    margin: 0 0 10px;
+    color: var(--ink);
+  }
+
+  .card-body p {
+    margin: 0;
+    color: var(--olive);
+    line-height: 1.65;
+  }
+
+  .card-tag {
+    display: inline-flex;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #f0eee6;
+    color: #4d4c48;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+
+  .card-tag.recommended {
+    background: rgba(201, 100, 66, 0.12);
+    color: var(--brand);
+  }
+
+  .mockup {
+    background: linear-gradient(180deg, #f7f6f1 0%, #f1eee5 100%);
+    min-height: 560px;
+    padding: 16px;
+  }
+
+  .screen {
+    background: #f5f4ed;
+    border: 1px solid var(--warm-line);
+    border-radius: 28px;
+    min-height: 100%;
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--warm-line);
+    font-size: 13px;
+    color: var(--olive);
+  }
+
+  .brand {
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: 0.06em;
+  }
+
+  .hero {
+    border-radius: 26px;
+    background: #fbfaf6;
+    border: 1px solid var(--warm-line);
+    padding: 18px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .hero h4 {
+    margin: 0;
+    font-size: 33px;
+    line-height: 1.08;
+    color: var(--ink);
+  }
+
+  .hero p {
+    margin: 0;
+    color: var(--olive);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat {
+    background: #fff;
+    border: 1px solid var(--warm-line);
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  .stat strong {
+    display: block;
+    color: var(--ink);
+    font-size: 18px;
+    margin-top: 8px;
+  }
+
+  .section-box {
+    border-radius: 22px;
+    border: 1px solid var(--warm-line);
+    background: #faf9f5;
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  .muted {
+    color: var(--stone);
+    font-size: 12px;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--warm-line);
+    font-size: 12px;
+    color: var(--olive);
+    background: #fff;
+  }
+
+  .chip.active {
+    color: #fff;
+    background: var(--brand);
+    border-color: var(--brand);
+  }
+
+  .proof-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 10px;
+  }
+
+  .proof-copy,
+  .proof-meta,
+  .compare-col,
+  .mini-card,
+  .side-note {
+    border: 1px solid var(--warm-line);
+    border-radius: 18px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .proof-copy strong,
+  .proof-meta strong,
+  .compare-col strong,
+  .mini-card strong,
+  .side-note strong {
+    display: block;
+    color: var(--ink);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .proof-copy span,
+  .proof-meta span,
+  .compare-col span,
+  .mini-card span,
+  .side-note span {
+    display: block;
+    color: var(--olive);
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .result {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border-radius: 14px;
+    background: #f8f6ef;
+    margin-top: 8px;
+  }
+
+  .thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #d7c5aa, #bca17b);
+  }
+
+  .line {
+    height: 8px;
+    border-radius: 999px;
+    background: #ddd7ca;
+    margin-bottom: 6px;
+  }
+
+  .line.short {
+    width: 58%;
+  }
+
+  .line.long {
+    width: 88%;
+  }
+
+  .hit {
+    display: inline-flex;
+    width: fit-content;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    background: rgba(201, 100, 66, 0.12);
+    color: var(--brand);
+  }
+
+  .dark-band {
+    border-radius: 24px;
+    background: #1d1c1a;
+    padding: 16px;
+    color: #f1ede4;
+    display: grid;
+    gap: 10px;
+  }
+
+  .dark-band strong {
+    font-size: 15px;
+  }
+
+  .dark-band span {
+    color: #b8b1a2;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 10px;
+  }
+
+  .footer-note {
+    margin-top: 24px;
+    color: var(--olive);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  @media (max-width: 1100px) {
+    .cards {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="top-note">NanS-CLIP Demo Layout Directions</div>
+<h2>哪一种更适合老师面谈时的首页节奏？</h2>
+<p class="lead">
+  三个方案都保留你现在的核心功能：验证集案例、标准答案判定、Zero-Shot vs DoRA 对比、可选图搜文。
+  差别主要在于首页先强调“项目价值”、还是先强调“证据链真实”、还是偏“研究型控制台”。
+</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mockup">
+      <div class="screen">
+        <div class="nav">
+          <div class="brand">NanS-CLIP</div>
+          <div>Project / Cases / Retrieval / Provenance</div>
+        </div>
+        <div class="hero">
+          <div class="card-tag">方向 A</div>
+          <h4>先讲项目，再讲证据，再做检索对比</h4>
+          <p>首页更像一页作品介绍，老师先知道你做了什么，再进入样本和模型效果。</p>
+          <div class="stats">
+            <div class="stat"><span>验证图像</span><strong>1117</strong></div>
+            <div class="stat"><span>验证文本</span><strong>4868</strong></div>
+            <div class="stat"><span>可溯源样本</span><strong>部分恢复</strong></div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>案例入口</strong><span class="muted">放在 Hero 后</span></div>
+          <div class="chip-row">
+            <div class="chip active">西湖</div>
+            <div class="chip">德寿宫</div>
+            <div class="chip">雷峰塔</div>
+            <div class="chip">青瓷</div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>代表样本溯源</strong><span class="muted">第二屏开始</span></div>
+          <div class="proof-grid">
+            <div class="proof-copy"><strong>标准查询文本</strong><span>“西湖十景，远山淡墨，烟水相接……”</span></div>
+            <div class="proof-meta"><strong>来源与 original_url</strong><span>站点、原始链接、关键词、古风文本并列展示</span></div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>Zero-Shot vs DoRA</strong><span class="muted">第三屏重点</span></div>
+          <div class="compare-grid">
+            <div class="compare-col">
+              <strong>Zero-Shot</strong>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+            </div>
+            <div class="compare-col">
+              <strong>DoRA</strong>
+              <div class="result"><div class="thumb"></div><div><div class="hit">标准答案</div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="card-tag">作品页叙事</div>
+      <h3>A. 作品介绍型</h3>
+      <p>最像展示页，开场从“项目是什么”切入，气质完整，但证据链不会最先出现。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mockup">
+      <div class="screen">
+        <div class="nav">
+          <div class="brand">NanS-CLIP</div>
+          <div>Overview / Evidence / Benchmark / Reverse Search</div>
+        </div>
+        <div class="hero">
+          <div class="card-tag recommended">推荐方向</div>
+          <h4>先建立可信感，再展示 DoRA 排名提升</h4>
+          <p>首页第一屏仍有项目概述，但第二块立刻放“当前精选案例 + 原始来源”，让老师先信页面不是空壳。</p>
+          <div class="stats">
+            <div class="stat"><span>验证图像</span><strong>1117</strong></div>
+            <div class="stat"><span>验证文本</span><strong>4868</strong></div>
+            <div class="stat"><span>演示方式</span><strong>标准答案对比</strong></div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>当前精选案例</strong><span class="muted">首页主角</span></div>
+          <div class="proof-grid">
+            <div class="proof-copy">
+              <strong>代表图像与标准文本</strong>
+              <span>一眼看到当前案例名、标准查询文本、为何适合讲解。</span>
+            </div>
+            <div class="proof-meta">
+              <strong>来源证据链</strong>
+              <span>来源站点、original_url、现代中文、古风文本、关键词直接上墙。</span>
+            </div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>案例切换</strong><span class="muted">只保留精选关键词</span></div>
+          <div class="chip-row">
+            <div class="chip active">西湖</div>
+            <div class="chip">德寿宫</div>
+            <div class="chip">马远</div>
+            <div class="chip">山水画</div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>标准答案检索对比</strong><span class="muted">首页核心演示区</span></div>
+          <div class="compare-grid">
+            <div class="compare-col">
+              <strong>Zero-Shot</strong>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line short"></div><div class="line short"></div></div></div>
+            </div>
+            <div class="compare-col">
+              <strong>DoRA</strong>
+              <div class="result"><div class="thumb"></div><div><div class="hit">标准答案 #1</div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="hit">标准答案 #2</div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="dark-band">
+          <strong>图搜文作为次入口</strong>
+          <span>不抢首页主叙事，折叠成 secondary section，需要时再展开展示跨模态能力。</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="card-tag recommended">推荐</div>
+      <h3>B. 证据先行型</h3>
+      <p>最适合面谈。老师会先看到“这真的是数据和样本”，再看到 DoRA 在标准答案上的提升，叙事最稳。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="mockup">
+      <div class="screen">
+        <div class="nav">
+          <div class="brand">NanS-CLIP</div>
+          <div>Summary / Controls / Results / Trace</div>
+        </div>
+        <div class="two-col">
+          <div class="hero">
+            <div class="card-tag">方向 C</div>
+            <h4>研究工作台式双栏布局</h4>
+            <p>左侧是摘要和案例控制，右侧固定样本溯源，下面直接跟检索结果。</p>
+          </div>
+          <div class="side-note">
+            <strong>右栏固定证据</strong>
+            <span>来源、链接、文本片段、标签会一直停留在视野里。</span>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="section-box">
+            <div class="section-title"><strong>案例 / 模式控制</strong><span class="muted">信息密度高</span></div>
+            <div class="chip-row">
+              <div class="chip active">西湖</div>
+              <div class="chip">德寿宫</div>
+              <div class="chip">雷峰塔</div>
+              <div class="chip">图搜文</div>
+            </div>
+            <div class="mini-card"><strong>模型说明</strong><span>Zero-Shot 与 DoRA 的 checkpoint 说明、标准答案命中摘要。</span></div>
+          </div>
+          <div class="section-box">
+            <div class="section-title"><strong>样本溯源</strong><span class="muted">常驻右栏</span></div>
+            <div class="proof-meta"><strong>original_url / 来源 / 关键词</strong><span>更像研究后台，信息完整但第一眼偏复杂。</span></div>
+          </div>
+        </div>
+        <div class="section-box">
+          <div class="section-title"><strong>检索结果对比</strong><span class="muted">密集展示</span></div>
+          <div class="compare-grid">
+            <div class="compare-col">
+              <strong>Zero-Shot</strong>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+            </div>
+            <div class="compare-col">
+              <strong>DoRA</strong>
+              <div class="result"><div class="thumb"></div><div><div class="hit">标准答案</div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+              <div class="result"><div class="thumb"></div><div><div class="line long"></div><div class="line short"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="card-tag">研究页</div>
+      <h3>C. 工作台型</h3>
+      <p>控制感最强，但信息密度最高，更像研究系统而不是面谈演示页，第一眼会稍显重。</p>
+    </div>
+  </div>
+</div>
+
+<p class="footer-note">
+  我建议选 <strong>B. 证据先行型</strong>。它最符合你现在的目标：不是做完整平台，而是让老师快速相信
+  “数据是真实的、样本能溯源、DoRA 的确对标准答案检索更有帮助”。<br />
+  请打开浏览器查看：<strong>http://localhost:65077</strong>，点一下你更喜欢的方案，然后在终端直接告诉我你的选择或想改的地方。
+</p>
